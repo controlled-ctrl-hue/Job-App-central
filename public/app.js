@@ -137,8 +137,11 @@ function banner() {
   el.replaceChildren();
   const d = state.data;
   if (!d.hasKey) {
-    const keyName = d.provider === 'kiro' ? 'KIRO_API_KEY' : 'ANTHROPIC_API_KEY';
-    el.append(h('div', { class: 'notice' }, 'Set ', h('code', {}, keyName), ' in ', h('code', {}, '.env'), ' (see ', h('code', {}, '.env.example'), ') and restart the server to enable AI search.'));
+    if (d.provider === 'kiro') {
+      el.append(h('div', { class: 'notice' }, 'Kiro is not signed in. Run ', h('code', {}, 'kiro-cli login'), ' in a terminal, then reload this page. (Make sure kiro-cli is installed.)'));
+    } else {
+      el.append(h('div', { class: 'notice' }, 'Set ', h('code', {}, 'ANTHROPIC_API_KEY'), ' in ', h('code', {}, '.env'), ' (see ', h('code', {}, '.env.example'), ') and restart the server to enable AI search.'));
+    }
   } else if (!d.profile.program || !d.profile.coopTerm) {
     el.append(h('div', { class: 'notice' }, 'Fill in your ', h('a', { href: '#', onclick: (e) => (e.preventDefault(), go('profile')) }, 'profile'), ' (program, term, skills, resume) so results match you.'));
   }

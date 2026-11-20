@@ -73,24 +73,49 @@ export function hasKiroKey() {
   return Boolean(process.env.KIRO_API_KEY);
 }
 
+// Auth: kiro-cli uses an active `kiro-cli login` session first, then KIRO_API_KEY
+// (https://kiro.dev/docs/getting-started/authentication.md). So an API key is
+// optional; plans without API keys can sign in once with `kiro-cli login`.
+let authCache = { at: 0, ok: false };
+export async function kiroReady() {
+  if (hasKiroKey()) return true;
+  // Cache success for a minute; re-check failures quickly so a fresh login shows up on reload.
+  if (Date.now() - authCache.at < (authCache.ok ? 60_000 : 3_000)) return authCache.ok;
+  let ok = false;
+  try {
+    await run(['whoami'], undefined, 15_000);
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  authCache = { at: Date.now(), ok };
+  return ok;
+}
+
+function childEnv() {
+  const env = { ...process.env, NO_COLOR: '1' };
+  // An empty KIRO_API_KEY= line in .env shouldn't override the login session.
+  if (!env.KIRO_API_KEY) delete env.KIRO_API_KEY;
+  return env;
+}
+
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 
-function run(args, input) {
-  if (!hasKiroKey()) throw new KiroError('KIRO_API_KEY is not set. Add it to .env and restart.', 400);
+function run(args, input, timeoutMs = TIMEOUT_MS()) {
   ensureAgents();
   return new Promise((resolve, reject) => {
     // No shell: arguments are passed as an array, so nothing in the prompt is interpreted.
     const child = spawn(CLI(), args, {
       cwd: WORKDIR,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: childEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      reject(new KiroError(`kiro-cli timed out after ${TIMEOUT_MS() / 1000}s`, 504));
-    }, TIMEOUT_MS());
+      reject(new KiroError(`kiro-cli timed out after ${timeoutMs / 1000}s`, 504));
+    }, timeoutMs);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', (e) => {
@@ -104,7 +129,9 @@ function run(args, input) {
       const tail = stripAnsi(err).trim().split('\n').slice(-6).join('\n');
       if (code === 0) return resolve({ stdout: stripAnsi(out), stderr: stripAnsi(err) });
       if (code === 4) return reject(new KiroError(`kiro-cli could not find the app's agent (exit 4). ${tail}`));
-      reject(new KiroError(`kiro-cli exited with code ${code}. ${tail || 'Check that KIRO_API_KEY is valid and your plan has credits.'}`));
+      authCache.at = 0; // re-check sign-in next time
+      const hint = hasKiroKey() ? 'Check that KIRO_API_KEY is valid and your plan has credits.' : 'Not signed in? Run `kiro-cli login` in a terminal, then try again.';
+      reject(new KiroError(`kiro-cli exited with code ${code}. ${tail ? `${tail} ` : ''}${hint}`));
     });
     child.stdin.on('error', () => {}); // process may exit before reading everything
     if (input !== undefined) child.stdin.end(input);

@@ -1,7 +1,7 @@
 // AI client. Two backends with the same ask() contract:
 //  - kiro: shells out to kiro-cli with a web-only agent (see kiro.js)
 //  - anthropic: calls the Claude Messages API directly with fetch (no SDK needed)
-import { kiroAsk, kiroListModels, hasKiroKey } from './kiro.js';
+import { kiroAsk, kiroListModels, kiroReady } from './kiro.js';
 
 const API = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
 const VERSION = '2023-06-01';
@@ -23,15 +23,16 @@ function headers() {
   };
 }
 
-/** "kiro" or "anthropic". Explicit AI_PROVIDER wins; otherwise use whichever key is set (Kiro first). */
+/** "kiro" or "anthropic". Explicit AI_PROVIDER wins; otherwise Kiro unless only an Anthropic key is set. */
 export function provider() {
   const p = (process.env.AI_PROVIDER || '').toLowerCase();
   if (p === 'kiro' || p === 'anthropic') return p;
-  return process.env.KIRO_API_KEY ? 'kiro' : 'anthropic';
+  return process.env.ANTHROPIC_API_KEY && !process.env.KIRO_API_KEY ? 'anthropic' : 'kiro';
 }
 
-export function hasKey() {
-  return provider() === 'kiro' ? hasKiroKey() : Boolean(process.env.ANTHROPIC_API_KEY);
+/** True when the active backend can make calls (Kiro: signed in or key set). */
+export async function hasKey() {
+  return provider() === 'kiro' ? kiroReady() : Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
 export async function listModels() {
