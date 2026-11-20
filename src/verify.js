@@ -61,8 +61,9 @@ function heuristicChecks(job, page, profile) {
   else checks.push(check('trust', 'Hosting', 'warn', `Unrecognized domain ${host}${companyDomain ? ` (company domain is ${companyDomain})` : ''}`));
 
   if (job.origin === 'ai') {
-    if (job.seenInSearch) checks.push(check('trust', 'Source', 'pass', "Link appeared in Claude's live search results"));
-    else checks.push(check('trust', 'Source', 'warn', "Link wasn't in Claude's search results, so it may be made up"));
+    if (job.seenInSearch === true) checks.push(check('trust', 'Source', 'pass', 'Link appeared in the live search results'));
+    else if (job.seenInSearch === false) checks.push(check('trust', 'Source', 'warn', "Link wasn't in the search results, so it may be made up"));
+    else checks.push(check('trust', 'Source', 'info', "Search sources aren't reported by Kiro; the page-load check covers made-up links"));
   }
 
   let text = '';
@@ -206,8 +207,8 @@ export async function verifyJob(job, profile, { useAi = true } = {}) {
   if (useAi) {
     try {
       ai = await aiReview(job, profile, heur);
-      for (const r of ai.legitimacyReasons || []) checks.push(check('trust', 'Claude review', ai.legitimacy === 'likely_real' ? 'pass' : ai.legitimacy === 'likely_scam' ? 'fail' : 'warn', r));
-      for (const r of ai.scopeReasons || []) checks.push(check('scope', 'Claude review', ai.isCoopScope ? 'pass' : 'fail', r));
+      for (const r of ai.legitimacyReasons || []) checks.push(check('trust', 'AI review', ai.legitimacy === 'likely_real' ? 'pass' : ai.legitimacy === 'likely_scam' ? 'fail' : 'warn', r));
+      for (const r of ai.scopeReasons || []) checks.push(check('scope', 'AI review', ai.isCoopScope ? 'pass' : 'fail', r));
       if (ai.termMatch === 'no') checks.push(check('scope', 'Term', 'warn', `Doesn't appear to run in ${profile.coopTerm || 'your term'}`));
     } catch (e) {
       aiError = e.message;

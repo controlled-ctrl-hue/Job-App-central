@@ -7,7 +7,7 @@ import { loadEnv } from './env.js';
 loadEnv();
 
 const { getDb, update, id, urlKey } = await import('./store.js');
-const { ask, extractJson, listModels, hasKey } = await import('./claude.js');
+const { ask, extractJson, listModels, hasKey, provider } = await import('./claude.js');
 const { verifyJob } = await import('./verify.js');
 const { fetchPage, htmlToText } = await import('./fetchPage.js');
 const P = await import('./prompts.js');
@@ -128,6 +128,7 @@ route('GET', /^\/api\/state$/, () => {
   const db = getDb();
   return {
     hasKey: hasKey(),
+    provider: provider(),
     profile: db.profile,
     jobs: db.jobs,
     contacts: db.contacts,
@@ -155,7 +156,7 @@ route('POST', /^\/api\/discover\/jobs$/, (_m, body) => {
   const task = startTask('jobs', focus || 'Job search', async (progress) => {
     const db = getDb();
     const existing = db.jobs.map((j) => `${j.company} ${j.title}`);
-    progress('Claude is searching the web');
+    progress('AI is searching the web');
     const res = await ask({
       system: 'You are a meticulous co-op job researcher for a University of Waterloo student. You only report postings you actually found.',
       prompt: P.discoverJobsPrompt(db.profile, { focus, count, exclude: existing }),
@@ -165,8 +166,8 @@ route('POST', /^\/api\/discover\/jobs$/, (_m, body) => {
       maxTokens: 12000,
     });
     const list = extractJson(res.text);
-    if (!Array.isArray(list)) throw new Error('Expected a list of jobs from Claude.');
-    const searchedKeys = new Set(res.searchedUrls.map(urlKey));
+    if (!Array.isArray(list)) throw new Error('Expected a list of jobs from the AI.');
+    const searchedKeys = res.searchedUrls ? new Set(res.searchedUrls.map(urlKey)) : null;
     const have = new Set(db.jobs.map((j) => urlKey(j.url)));
     const fresh = [];
     for (const raw of list) {
@@ -180,7 +181,8 @@ route('POST', /^\/api\/discover\/jobs$/, (_m, body) => {
 
     let done = 0;
     progress(`Verifying 0/${fresh.length}`);
-    await pool(fresh, 3, async (j) => {
+    // Each Kiro review is a separate kiro-cli process, so run fewer at once.
+    await pool(fresh, provider() === 'kiro' ? 2 : 3, async (j) => {
       try {
         const u = await runVerification(j.id);
         if (u) {
@@ -205,7 +207,7 @@ route('POST', /^\/api\/discover\/contacts$/, (_m, body) => {
   const companies = Array.isArray(body.companies) ? body.companies.map((c) => str(c, 80)).filter(Boolean).slice(0, 15) : [];
   const task = startTask('contacts', focus || 'People search', async (progress) => {
     const db = getDb();
-    progress('Claude is searching the web');
+    progress('AI is searching the web');
     const res = await ask({
       system: 'You find publicly listed professional contacts. You never guess email addresses or invent people.',
       prompt: P.discoverContactsPrompt(db.profile, { focus, companies, count }),
@@ -215,8 +217,8 @@ route('POST', /^\/api\/discover\/contacts$/, (_m, body) => {
       maxTokens: 8000,
     });
     const list = extractJson(res.text);
-    if (!Array.isArray(list)) throw new Error('Expected a list of people from Claude.');
-    const searchedKeys = new Set(res.searchedUrls.map(urlKey));
+    if (!Array.isArray(list)) throw new Error('Expected a list of people from the AI.');
+    const searchedKeys = res.searchedUrls ? new Set(res.searchedUrls.map(urlKey)) : null;
     const have = new Set(db.contacts.map((c) => `${c.name}|${c.company}`.toLowerCase()));
     const fresh = [];
     for (const raw of list) {
@@ -236,7 +238,7 @@ route('POST', /^\/api\/discover\/contacts$/, (_m, body) => {
         profileUrl: isHttpUrl(raw.profileUrl) ? str(raw.profileUrl, 2000) : '',
         email,
         sourceUrl,
-        sourceSeen: sourceUrl ? searchedKeys.has(urlKey(sourceUrl)) : false,
+        sourceSeen: !sourceUrl ? false : searchedKeys ? searchedKeys.has(urlKey(sourceUrl)) : null,
         reason: str(raw.reason, 400),
         hook: str(raw.hook, 400),
         status: 'new',
@@ -449,5 +451,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Job App Central running at http://localhost:${PORT}`);
-  if (!hasKey()) console.log('Note: ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.');
+  const keyName = provider() === 'kiro' ? 'KIRO_API_KEY' : 'ANTHROPIC_API_KEY';
+  console.log(`AI provider: ${provider()}`);
+  if (!hasKey()) console.log(`Note: ${keyName} is not set. Copy .env.example to .env and add your key.`);
 });
