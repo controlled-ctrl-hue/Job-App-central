@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job App Central</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Job App Central</div>
+    <nav id="tabs">
+      <button data-tab="jobs" class="active">Jobs</button>
+      <button data-tab="people">People</button>
+      <button data-tab="profile">Profile</button>
+      <button data-tab="activity">Activity</button>
+    </nav>
+    <div id="taskbar" class="muted"></div>
+  </header>
+  <div id="banner"></div>
+  <main id="view"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

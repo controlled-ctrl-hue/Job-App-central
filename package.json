@@ -1,0 +1,14 @@
+{
+  "name": "job-app-central",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local, AI-curated co-op job board with posting verification and cold-outreach tools.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  }
+}
