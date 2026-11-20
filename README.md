@@ -14,17 +14,19 @@ You need Node.js 20 or newer. The app has no npm dependencies.
    - macOS: `brew install kiro-cli`, or `curl -fsSL https://cli.kiro.dev/install | bash`
    - Linux: `curl -fsSL https://cli.kiro.dev/install | bash`
    - Windows 11 (PowerShell): `irm 'https://cli.kiro.dev/install.ps1' | iex`
-2. Create an API key at https://app.kiro.dev under **API Keys**. You need a Pro plan or higher. The key starts with `ksk_` and is shown only once.
+2. Sign in once: `kiro-cli login`. Check it with `kiro-cli whoami`. No API key is needed, so this works on plans that can't create keys.
 3. Run:
 
 ```bash
 git clone https://github.com/controlled-ctrl-hue/Job-App-central.git
 cd Job-App-central
-cp .env.example .env        # then paste your key after KIRO_API_KEY=
+cp .env.example .env
 npm start                   # or: node src/server.js
 ```
 
-Usage comes out of your Kiro plan's credits.
+Usage comes out of your Kiro plan's credits. If the page says Kiro isn't signed in, run `kiro-cli login` and reload.
+
+Optional: on Pro or higher you can set `KIRO_API_KEY` in `.env` instead of signing in. If both exist, kiro-cli uses the login session.
 
 ### With an Anthropic key instead
 
@@ -77,8 +79,8 @@ These checks reduce risk but can't remove it. Never pay to apply, and never shar
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AI_PROVIDER` | `kiro` if `KIRO_API_KEY` is set, else `anthropic` | Which backend to use |
-| `KIRO_API_KEY` | (required for Kiro) | Your Kiro API key (`ksk_...`) |
+| `AI_PROVIDER` | `kiro` unless only `ANTHROPIC_API_KEY` is set | Which backend to use |
+| `KIRO_API_KEY` | (optional) | Kiro API key (`ksk_...`) if you'd rather not use `kiro-cli login` |
 | `KIRO_MODEL` | Kiro's default | Model ID such as `claude-sonnet-4.6`. You can also pick one in Profile. |
 | `KIRO_CLI_PATH` | `kiro-cli` | Path to the CLI if it isn't on your PATH |
 | `KIRO_TIMEOUT_SECS` | `600` | Max seconds per `kiro-cli` run |

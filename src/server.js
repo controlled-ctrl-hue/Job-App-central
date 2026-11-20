@@ -124,10 +124,10 @@ function recordSearch(kind, info) {
 const routes = [];
 const route = (method, pattern, handler) => routes.push({ method, pattern, handler });
 
-route('GET', /^\/api\/state$/, () => {
+route('GET', /^\/api\/state$/, async () => {
   const db = getDb();
   return {
-    hasKey: hasKey(),
+    hasKey: await hasKey(),
     provider: provider(),
     profile: db.profile,
     jobs: db.jobs,
@@ -273,7 +273,7 @@ route('POST', /^\/api\/jobs$/, (_m, body) => {
       /* verification will report reachability */
     }
     let raw = { url };
-    if (hasKey()) {
+    if (await hasKey()) {
       const res = await ask({ system: 'You extract structured data from job postings.', prompt: P.extractJobPrompt(url, text), model: getDb().profile.model, maxTokens: 1500 });
       raw = { ...extractJson(res.text), url };
     }
@@ -449,9 +449,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   console.log(`Job App Central running at http://localhost:${PORT}`);
-  const keyName = provider() === 'kiro' ? 'KIRO_API_KEY' : 'ANTHROPIC_API_KEY';
   console.log(`AI provider: ${provider()}`);
-  if (!hasKey()) console.log(`Note: ${keyName} is not set. Copy .env.example to .env and add your key.`);
+  if (await hasKey()) return;
+  if (provider() === 'kiro') console.log('Note: kiro-cli is not signed in. Run `kiro-cli login` (or set KIRO_API_KEY), then reload the page.');
+  else console.log('Note: ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.');
 });
