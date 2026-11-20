@@ -137,7 +137,8 @@ function banner() {
   el.replaceChildren();
   const d = state.data;
   if (!d.hasKey) {
-    el.append(h('div', { class: 'notice' }, 'Add your Anthropic API key to ', h('code', {}, '.env'), ' (see ', h('code', {}, '.env.example'), ') and restart the server to enable AI search.'));
+    const keyName = d.provider === 'kiro' ? 'KIRO_API_KEY' : 'ANTHROPIC_API_KEY';
+    el.append(h('div', { class: 'notice' }, 'Set ', h('code', {}, keyName), ' in ', h('code', {}, '.env'), ' (see ', h('code', {}, '.env.example'), ') and restart the server to enable AI search.'));
   } else if (!d.profile.program || !d.profile.coopTerm) {
     el.append(h('div', { class: 'notice' }, 'Fill in your ', h('a', { href: '#', onclick: (e) => (e.preventDefault(), go('profile')) }, 'profile'), ' (program, term, skills, resume) so results match you.'));
   }
@@ -320,7 +321,7 @@ function jobBody(job) {
       h('span', { class: 'badge' }, h('span', { class: `dot ${v.trust}` }), 'Real posting'), '   ',
       h('span', { class: 'badge' }, h('span', { class: `dot ${v.scope}` }), 'Co-op scope')) : null,
     checks,
-    v?.aiError ? h('p', { class: 'small', style: 'color:var(--warn)' }, `Claude review failed: ${v.aiError}`) : null,
+    v?.aiError ? h('p', { class: 'small', style: 'color:var(--warn)' }, `AI review failed: ${v.aiError}`) : null,
     v ? h('p', { class: 'small muted' }, `Checked ${new Date(v.checkedAt).toLocaleString()}`) : null,
     h('div', { class: 'links', style: 'margin:10px 0' }, extLink(job.url, host(job.url) || 'Open posting'), job.companyDomain ? extLink(`https://${job.companyDomain}`, job.companyDomain) : null),
     h('div', { class: 'row' },
@@ -357,7 +358,7 @@ function peopleView() {
   const cards = d.contacts.filter((c) => c.status !== 'archived').map(contactCard);
   return h('div', {},
     h('div', { class: 'row' }, companies, focus, btn),
-    h('p', { class: 'small muted' }, 'Only people with a public page are listed. Emails are shown only when they were published on that page; Claude never guesses addresses.'),
+    h('p', { class: 'small muted' }, 'Only people with a public page are listed. Emails are shown only when they were published on that page; the AI is told never to guess addresses.'),
     h('div', { style: 'margin-top:16px' }, cards.length ? cards : h('div', { class: 'empty' }, 'No contacts yet.')),
   );
 }
@@ -382,7 +383,7 @@ function contactCard(c) {
       h('span', { class: 'title' }, c.name),
       h('span', { class: 'sub' }, [c.title, c.company].filter(Boolean).join(' · ')),
       h('span', { class: 'spacer' }),
-      c.sourceUrl && !c.sourceSeen ? h('span', { class: 'badge', title: "Source page wasn't in Claude's search results. Double-check this person." }, h('span', { class: 'dot warn' }), 'Unconfirmed source') : null,
+      c.sourceUrl && c.sourceSeen === false ? h('span', { class: 'badge', title: "Source page wasn't in the search results. Double-check this person." }, h('span', { class: 'dot warn' }), 'Unconfirmed source') : null,
       statusSel),
     c.reason ? h('p', { style: 'margin:6px 0' }, c.reason) : null,
     h('div', { class: 'links' }, extLink(c.profileUrl, 'Profile'), extLink(c.sourceUrl, `Source (${host(c.sourceUrl)})`)),
@@ -420,7 +421,7 @@ function profileView() {
   const field = (key, label, attrs = {}) => h('label', { class: attrs.full ? 'full' : '' }, label,
     attrs.rows ? h('textarea', { name: key, rows: attrs.rows, placeholder: attrs.placeholder || '', value: p[key] || '' }) : h('input', { name: key, placeholder: attrs.placeholder || '', value: p[key] || '' }));
 
-  const modelSel = h('select', { name: 'model' }, h('option', { value: '' }, 'Auto (newest Sonnet)'),
+  const modelSel = h('select', { name: 'model' }, h('option', { value: '' }, state.data.provider === 'kiro' ? 'Kiro default' : 'Auto (newest Sonnet)'),
     p.model ? h('option', { value: p.model, selected: true }, p.model) : null);
   if (state.data.hasKey) {
     (state.models ? Promise.resolve(state.models) : api('/api/models').then((r) => (state.models = r.models))).then((models) => {
@@ -454,10 +455,10 @@ function profileView() {
     field('links', 'Links', { full: true, placeholder: 'GitHub, LinkedIn, portfolio' }),
     h('label', { class: 'check full' }, h('input', { type: 'checkbox', name: 'openToUS', checked: p.openToUS }), 'Include US roles (needs a J-1 visa)'),
     field('resume', 'Resume (paste as plain text)', { full: true, rows: 14 }),
-    h('label', {}, 'Claude model', modelSel),
+    h('label', {}, state.data.provider === 'kiro' ? 'Model (via Kiro)' : 'Claude model', modelSel),
     h('div', { class: 'full' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save profile')),
   );
-  return h('div', {}, h('p', { class: 'muted' }, 'Claude uses this to search and to judge fit. It stays on your computer except when sent to the Claude API.'), form);
+  return h('div', {}, h('p', { class: 'muted' }, `The AI uses this to search and to judge fit. It stays on your computer except when sent to ${state.data.provider === 'kiro' ? 'Kiro' : 'the Claude API'}.`), form);
 }
 
 // ---------- Activity ----------
@@ -471,8 +472,9 @@ function activityView() {
       h('td', {}, r.kind === 'jobs' ? 'Jobs' : 'People'),
       h('td', {}, r.focus || '—'),
       h('td', {}, r.found), h('td', {}, r.added),
-      h('td', {}, r.usage?.web_searches ?? ''),
-      h('td', {}, r.usage ? `${r.usage.input_tokens.toLocaleString()} / ${r.usage.output_tokens.toLocaleString()}` : ''),
+      // Kiro doesn't report usage to the app, so zero means "unknown" there.
+      h('td', {}, r.usage?.web_searches || '—'),
+      h('td', {}, r.usage?.input_tokens ? `${r.usage.input_tokens.toLocaleString()} / ${r.usage.output_tokens.toLocaleString()}` : '—'),
       h('td', { class: 'small muted' }, r.model || '')))));
 }
 

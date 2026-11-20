@@ -1,4 +1,8 @@
-// Thin client for the Claude Messages API using fetch (no SDK needed).
+// AI client. Two backends with the same ask() contract:
+//  - kiro: shells out to kiro-cli with a web-only agent (see kiro.js)
+//  - anthropic: calls the Claude Messages API directly with fetch (no SDK needed)
+import { kiroAsk, kiroListModels, hasKiroKey } from './kiro.js';
+
 const API = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
 const VERSION = '2023-06-01';
 
@@ -19,11 +23,22 @@ function headers() {
   };
 }
 
+/** "kiro" or "anthropic". Explicit AI_PROVIDER wins; otherwise use whichever key is set (Kiro first). */
+export function provider() {
+  const p = (process.env.AI_PROVIDER || '').toLowerCase();
+  if (p === 'kiro' || p === 'anthropic') return p;
+  return process.env.KIRO_API_KEY ? 'kiro' : 'anthropic';
+}
+
 export function hasKey() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return provider() === 'kiro' ? hasKiroKey() : Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
 export async function listModels() {
+  return provider() === 'kiro' ? kiroListModels() : listAnthropicModels();
+}
+
+async function listAnthropicModels() {
   const res = await fetch(`${API}/v1/models?limit=100`, { headers: headers() });
   if (!res.ok) throw new ClaudeError(`Model list failed: ${res.status} ${await res.text()}`, res.status);
   const body = await res.json();
@@ -35,7 +50,7 @@ export async function resolveModel(preferred) {
   if (preferred) return preferred;
   if (process.env.CLAUDE_MODEL) return process.env.CLAUDE_MODEL;
   if (cachedDefault) return cachedDefault;
-  const models = await listModels();
+  const models = await listAnthropicModels();
   // Newest models are listed first. Sonnet is the cost/quality sweet spot for this workload.
   const pick = models.find((m) => /sonnet/i.test(m.id)) || models.find((m) => /opus/i.test(m.id)) || models[0];
   if (!pick) throw new ClaudeError('No Claude models available for this API key.', 400);
@@ -48,6 +63,9 @@ export async function resolveModel(preferred) {
  * Returns { text, searchedUrls, usage, model }.
  */
 export async function ask({ system, prompt, model, webSearch = false, maxSearches = 8, maxTokens = 8000 }) {
+  if (provider() === 'kiro') {
+    return kiroAsk({ system, prompt, model: model || process.env.KIRO_MODEL || '', webSearch, maxSearches });
+  }
   const modelId = await resolveModel(model);
   const tools = webSearch
     ? [{ type: process.env.WEB_SEARCH_TOOL || 'web_search_20250305', name: 'web_search', max_uses: maxSearches }]
@@ -112,5 +130,5 @@ export function extractJson(text) {
       /* try next candidate */
     }
   }
-  throw new Error('Claude did not return valid JSON.');
+  throw new Error('The AI did not return valid JSON.');
 }
